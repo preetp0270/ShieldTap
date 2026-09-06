@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NFC Security</string>
+    <string name="no_nfc">This device has no NFC</string>
+    <string name="learning_mode">Learning mode – tap a bank card now</string>
+    <string name="card_learned">Card space created</string>
+    <string name="unknown_card">Unknown card – learn it first</string>
+    <string name="delete_cancelled">Delete cancelled</string>
+    <string name="space_deleted">Card space deleted</string>
+    <string name="opened">Unlocked</string>
+    <string name="copied">Copied to clipboard</string>
+    <string name="vault_locked">Vault locked</string>
+    <string name="biometric_title">Confirm identity</string>
+    <string name="biometric_subtitle">Use fingerprint or face to open this vault</string>
+</resources>

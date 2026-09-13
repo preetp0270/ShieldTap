@@ -1,30 +1,35 @@
-# LockCard (working name)
+# ShieldTap
 
-NFC-gated secure vaults · local encryption · optional Cloudinary backup · MongoDB accounts.
+NFC-gated secure vaults · on-device encryption · optional Cloudinary backup · MongoDB accounts.
 
 ```
-LockCard/   (or NFCSecurity/)
-  android/     ← Android Studio project
-  backend/     ← Render-deployable API
+ShieldTap/
+  android/     ← Open in Android Studio
+  backend/     ← Deploy on Render
 ```
 
-## Suggested product names
+## Quick check
 
-| Name | Why |
-|------|-----|
-| **LockCard** | Clear: card + lock; short; app-store friendly |
-| **TapVault** | NFC tap to open vault |
-| **CardSafe** | Simple, security-focused |
-| **NfcKeep** | Keep secrets behind NFC |
-| **VaultTap** | Same idea, different order |
-| **ShieldTap** | Stronger “protection” tone |
+| Piece | Works when… |
+|-------|-------------|
+| Android build | Open `android/`, sync Gradle, device has NFC |
+| Local vaults / NFC | No backend needed |
+| Cloud login + file backup | Backend running + `.env` filled + user logged in |
+| MongoDB Atlas | `MONGODB_URI` set; Network Access allows your IP / `0.0.0.0/0` |
+| Cloudinary uploads | All three `CLOUDINARY_*` keys set |
+| Email OTP | `SMTP_*` set (optional until you use reset/verify) |
 
-**Recommendation:** **LockCard** — easy to say, logo-friendly, fits “primary card + MPIN”.
+## Backend
 
-## Backend (Render)
+```bash
+cd backend
+cp .env.example .env   # edit values
+npm install
+npm run dev
+```
 
-See `backend/README.md`. DNS for MongoDB Atlas SRV uses Google DNS in code.
+## Android display name
 
-## Android
-
-Open the `android/` folder in Android Studio.
+Change user-visible name in:
+- `android/app/src/main/res/values/strings.xml` → `app_name`
+- Optional later: `applicationId` in `android/app/build.gradle.kts`

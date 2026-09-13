@@ -39,7 +39,7 @@ app.use(
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
-    service: "lockcard-api",
+    service: "shieldtap-api",
     env: process.env.NODE_ENV || "development",
   });
 });
@@ -47,7 +47,7 @@ app.get("/", (_req, res) => {
 app.get("/health", (_req, res) =>
   res.json({
     ok: true,
-    service: "lockcard-api",
+    service: "shieldtap-api",
     cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME),
     mongo: Boolean(process.env.MONGODB_URI),
   })

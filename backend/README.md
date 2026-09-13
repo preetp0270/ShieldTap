@@ -1,4 +1,4 @@
-# LockCard API
+# ShieldTap API
 
 Node.js + Express + MongoDB Atlas + Cloudinary.  
 Ready for **Render** free web service.
@@ -37,7 +37,7 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 | `CLOUDINARY_CLOUD_NAME` | |
 | `CLOUDINARY_API_KEY` | |
 | `CLOUDINARY_API_SECRET` | |
-| `CLOUDINARY_FOLDER` | e.g. `lockcard` |
+| `CLOUDINARY_FOLDER` | e.g. `shieldtap` |
 | `SMTP_*` / `MAIL_FROM` | optional until email is needed |
 | `NODE_ENV` | `production` |
 
@@ -52,7 +52,7 @@ On Render, outbound IPs change. In Atlas → **Network Access** → add **`0.0.0
 API base URL looks like:
 
 ```
-https://lockcard-api.onrender.com
+https://shieldtap-api.onrender.com
 ```
 
 Android `API_BASE_URL` (release) should be that URL (HTTPS, no trailing slash).

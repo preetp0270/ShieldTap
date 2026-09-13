@@ -518,7 +518,7 @@ class MainActivity : FragmentActivity(), NfcAdapter.ReaderCallback {
             val json = repo.exportBackup()
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
-                putExtra(Intent.EXTRA_SUBJECT, "NFC Security Backup")
+                putExtra(Intent.EXTRA_SUBJECT, "ShieldTap Backup")
                 putExtra(Intent.EXTRA_TEXT, json)
             }
             startActivity(Intent.createChooser(send, "Export vault backup"))
@@ -919,7 +919,7 @@ fun AppLockScreen(onUnlock: (String) -> Boolean) {
                 Icon(Icons.Default.Lock, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
             }
             Spacer(Modifier.height(20.dp))
-            Text("NFC Security", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("ShieldTap", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
                 "Enter your MPIN to continue",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -983,7 +983,7 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("NFC Security", fontWeight = FontWeight.Bold)
+                        Text("ShieldTap", fontWeight = FontWeight.Bold)
                         Text(
                             "Protect your privacy",
                             style = MaterialTheme.typography.bodySmall,

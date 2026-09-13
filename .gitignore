@@ -1,0 +1,66 @@
+# ========================
+# Root / General
+# ========================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# ========================
+# Backend (Node.js)
+# ========================
+backend/node_modules/
+backend/.env
+backend/.env.local
+backend/.env.*.local
+backend/npm-debug.log*
+backend/yarn-debug.log*
+backend/yarn-error.log*
+backend/dist/
+backend/build/
+backend/coverage/
+backend/.nyc_output/
+
+# ========================
+# Android / Gradle
+# ========================
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/.idea/
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+android/*.apk
+android/*.aab
+android/*.ap_
+android/*.dex
+android/bin/
+android/gen/
+android/out/
+
+# Gradle wrapper jar is usually committed; ignore only local caches
+android/.gradle/
+
+# ========================
+# Secrets & local config
+# ========================
+.env
+.env.*
+!.env.example
+**/secrets/
+**/*.keystore
+**/*.jks
+**/google-services.json
+**/GoogleService-Info.plist

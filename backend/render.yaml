@@ -2,7 +2,7 @@
 # Deploy: Dashboard → New → Blueprint → connect this repo, rootDir = backend
 services:
   - type: web
-    name: lockcard-api
+    name: shieldtap-api
     runtime: node
     plan: free
     rootDir: backend
@@ -27,7 +27,7 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
       - key: CLOUDINARY_FOLDER
-        value: lockcard
+        value: shieldtap
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

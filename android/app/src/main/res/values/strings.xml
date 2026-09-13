@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NFC Security</string>
+    <string name="app_name">ShieldTap</string>
     <string name="no_nfc">This device has no NFC</string>
     <string name="learning_mode">Learning mode – tap a bank card now</string>
     <string name="card_learned">Card space created</string>

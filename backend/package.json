@@ -1,7 +1,7 @@
 {
-  "name": "lockcard-api",
+  "name": "shieldtap-api",
   "version": "1.0.0",
-  "description": "LockCard API – auth, sessions, OTP, Cloudinary, MongoDB (Render-ready)",
+  "description": "ShieldTap API – auth, sessions, OTP, Cloudinary, MongoDB (Render-ready)",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

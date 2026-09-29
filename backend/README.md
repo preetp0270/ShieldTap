@@ -1,60 +1,64 @@
-# ShieldTap API
+# ShieldTap Backend (Node + Express + MongoDB + Cloudinary)
 
-Node.js + Express + MongoDB Atlas + Cloudinary.  
-Ready for **Render** free web service.
+## 1. Create MongoDB Atlas (free)
 
-## Local
+1. Go to https://cloud.mongodb.com → Sign up / Log in
+2. Create a free cluster (M0)
+3. Database Access → Add user (username + password) → remember them
+4. Network Access → Add IP Address → `0.0.0.0/0` (allow from anywhere for testing)
+5. Database → Connect → Drivers → copy the connection string  
+   Replace `<password>` and change database name to `shieldtap`
+
+## 2. Cloudinary (free)
+
+1. https://cloudinary.com → Sign up
+2. Dashboard → copy **Cloud name**, **API Key**, **API Secret**
+
+## 3. Local setup
 
 ```bash
 cd backend
 cp .env.example .env
+# Edit .env with your real values
 npm install
 npm run dev
 ```
 
-DNS for Atlas SRV is set in code:
+Server starts at `http://localhost:5000`
 
-```js
-dns.setServers(["8.8.8.8", "8.8.4.4"]);
+## 4. Test
+
+```bash
+curl http://localhost:5000/health
 ```
 
-## Deploy on Render
+## API Overview
 
-1. Push repo to GitHub.
-2. [Render Dashboard](https://dashboard.render.com) → **New** → **Web Service**.
-3. Connect repo. Settings:
-   - **Root Directory:** `backend`
-   - **Runtime:** Node
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-   - **Health Check Path:** `/health`
-4. Environment variables (same as `.env.example`):
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/auth/register | – | Register (email, phone, username, password) |
+| POST | /api/auth/login | – | Login → returns JWT (5-day session) |
+| POST | /api/auth/logout | ✓ | Logout |
+| GET | /api/auth/me | ✓ | Current user + extend session |
+| GET | /api/folders | ✓ | List folders (query parentId) |
+| POST | /api/folders | ✓ | Create folder |
+| PATCH | /api/folders/:id | ✓ | Rename / lock |
+| DELETE | /api/folders/:id | ✓ | Delete folder + children |
+| GET | /api/vault?folderId= | ✓ | List items in folder |
+| POST | /api/vault/password | ✓ | Add password (key + value) |
+| POST | /api/vault/upload | ✓ | Upload image/file (multipart) |
+| DELETE | /api/vault/:id | ✓ | Delete item |
+| PATCH | /api/user/profile | ✓ | Update displayName / phone |
+| POST | /api/user/avatar | ✓ | Upload profile photo |
+| POST | /api/user/background | ✓ | Upload background |
 
-| Key | Notes |
-|-----|--------|
-| `MONGODB_URI` | Atlas connection string |
-| `JWT_SECRET` | long random string |
-| `CLOUDINARY_CLOUD_NAME` | |
-| `CLOUDINARY_API_KEY` | |
-| `CLOUDINARY_API_SECRET` | |
-| `CLOUDINARY_FOLDER` | e.g. `shieldtap` |
-| `SMTP_*` / `MAIL_FROM` | optional until email is needed |
-| `NODE_ENV` | `production` |
+## Session rule
 
-Or use **Blueprint**: `render.yaml` in this folder.
+- JWT + Session document expire after **5 days of inactivity**
+- Every authenticated request extends the session by another 5 days
 
-### Atlas Network Access
+## Important notes
 
-On Render, outbound IPs change. In Atlas → **Network Access** → add **`0.0.0.0/0`** (allow from anywhere) for the free tier, or lock down later with a static IP plan.
-
-### After deploy
-
-API base URL looks like:
-
-```
-https://shieldtap-api.onrender.com
-```
-
-Android `API_BASE_URL` (release) should be that URL (HTTPS, no trailing slash).
-
-Free Render services **sleep** after ~15 min idle; first request may take 30–60s.
+- **MPIN is device-only** – never sent to server. Store it encrypted on the phone (DataStore + EncryptedSharedPreferences).
+- Password values are currently stored as plain text in MongoDB for simplicity. In production you should encrypt them client-side before sending.
+- Failed login attempts are rate-limited (10 per 5 min). Client should also lock after 3 wrong password/MPIN tries for 5 minutes.

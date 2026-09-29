@@ -1,99 +1,109 @@
-import { Router } from "express";
-import { requireAuth } from "../middleware/auth.js";
-import { User } from "../models/User.js";
-import { hashPassword, verifyPassword } from "../utils/crypto.js";
+import { Router } from 'express';
+import multer from 'multer';
+import User from '../models/User.js';
+import { requireAuth } from '../middleware/auth.js';
+import cloudinary from '../config/cloudinary.js';
 
 const router = Router();
-
 router.use(requireAuth);
 
-router.get("/profile", async (req, res) => {
-  const u = req.user;
-  res.json({
-    id: u._id,
-    username: u.username,
-    email: u.email,
-    displayName: u.displayName,
-    photoUrl: u.photoUrl,
-    emailVerified: u.emailVerified,
-    cards: u.cards || [],
-    cardsCount: (u.cards || []).length,
-  });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-router.patch("/profile", async (req, res, next) => {
+// PATCH /api/user/profile
+router.patch('/profile', async (req, res, next) => {
   try {
+    const { displayName, phone } = req.body;
     const user = await User.findById(req.user._id);
-    if (req.body.displayName != null) user.displayName = String(req.body.displayName).slice(0, 64);
-    if (req.body.photoUrl != null) user.photoUrl = String(req.body.photoUrl).slice(0, 512);
+    if (displayName !== undefined) user.displayName = String(displayName).slice(0, 50);
+    if (phone !== undefined) user.phone = String(phone).slice(0, 15);
+
+    user.notifications.unshift({
+      type: 'profile_update',
+      message: 'Profile updated',
+    });
     await user.save();
-    res.json({ ok: true });
-  } catch (e) {
-    next(e);
+
+    res.json({
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        backgroundUrl: user.backgroundUrl,
+      },
+    });
+  } catch (err) {
+    next(err);
   }
 });
 
-/** Register / update NFC cards for this cloud account */
-router.post("/cards", async (req, res, next) => {
+// POST /api/user/avatar
+router.post('/avatar', upload.single('avatar'), async (req, res, next) => {
   try {
-    const { uid, label, isPrimary } = req.body;
-    if (!uid) return res.status(400).json({ error: "uid required" });
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: `shieldtap/${req.user._id}/avatar`, transformation: [{ width: 400, height: 400, crop: 'fill' }] },
+        (err, r) => (err ? reject(err) : resolve(r))
+      );
+      stream.end(req.file.buffer);
+    });
+
     const user = await User.findById(req.user._id);
-    const upper = String(uid).toUpperCase();
-    const existing = user.cards.find((c) => c.uid.toUpperCase() === upper);
-    if (existing) {
-      if (label != null) existing.label = label;
-      if (isPrimary) {
-        user.cards.forEach((c) => (c.isPrimary = false));
-        existing.isPrimary = true;
-      }
-    } else {
-      if (isPrimary || user.cards.length === 0) {
-        user.cards.forEach((c) => (c.isPrimary = false));
-      }
-      user.cards.push({
-        uid: upper,
-        label: label || "",
-        isPrimary: Boolean(isPrimary) || user.cards.length === 0,
-      });
-    }
+    user.avatarUrl = result.secure_url;
+    user.notifications.unshift({ type: 'profile_update', message: 'Profile photo updated' });
     await user.save();
-    res.json({ cards: user.cards });
-  } catch (e) {
-    next(e);
+
+    res.json({ avatarUrl: user.avatarUrl });
+  } catch (err) {
+    next(err);
   }
 });
 
-router.delete("/cards/:uid", async (req, res, next) => {
+// POST /api/user/background
+router.post('/background', upload.single('background'), async (req, res, next) => {
   try {
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: `shieldtap/${req.user._id}/bg` },
+        (err, r) => (err ? reject(err) : resolve(r))
+      );
+      stream.end(req.file.buffer);
+    });
+
     const user = await User.findById(req.user._id);
-    const upper = String(req.params.uid).toUpperCase();
-    user.cards = user.cards.filter((c) => c.uid.toUpperCase() !== upper);
-    if (user.cards.length && !user.cards.some((c) => c.isPrimary)) {
-      user.cards[0].isPrimary = true;
-    }
+    user.backgroundUrl = result.secure_url;
     await user.save();
-    res.json({ cards: user.cards });
-  } catch (e) {
-    next(e);
+
+    res.json({ backgroundUrl: user.backgroundUrl });
+  } catch (err) {
+    next(err);
   }
 });
 
-router.post("/change-password", async (req, res, next) => {
+// GET /api/user/notifications
+router.get('/notifications', async (req, res) => {
+  res.json({ notifications: req.user.notifications?.slice(0, 30) || [] });
+});
+
+// POST /api/user/notifications/read
+router.post('/notifications/read', async (req, res, next) => {
   try {
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword || String(newPassword).length < 8) {
-      return res.status(400).json({ error: "Invalid password" });
-    }
-    const user = await User.findById(req.user._id);
-    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
-      return res.status(401).json({ error: "Current password incorrect" });
-    }
-    user.passwordHash = await hashPassword(newPassword);
-    await user.save();
-    res.json({ ok: true });
-  } catch (e) {
-    next(e);
+    await User.updateOne(
+      { _id: req.user._id },
+      { $set: { 'notifications.$[].read': true } }
+    );
+    res.json({ message: 'Marked as read' });
+  } catch (err) {
+    next(err);
   }
 });
 

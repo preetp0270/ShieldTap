@@ -1,65 +1,46 @@
-import "dotenv/config";
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import { connectDb } from "./utils/db.js";
-import { configureCloudinary } from "./services/cloudinary.js";
-import authRoutes from "./routes/auth.js";
-import userRoutes from "./routes/user.js";
-import fileRoutes from "./routes/files.js";
-import { errorHandler } from "./middleware/errorHandler.js";
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { connectDB } from './config/db.js';
+import { initCloudinary } from './config/cloudinary.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import authRoutes from './routes/auth.js';
+import folderRoutes from './routes/folders.js';
+import vaultRoutes from './routes/vault.js';
+import userRoutes from './routes/user.js';
 
 const app = express();
-// Render injects PORT; bind all interfaces
-const PORT = Number(process.env.PORT) || 4000;
-const HOST = process.env.HOST || "0.0.0.0";
-
-configureCloudinary();
+const PORT = process.env.PORT || 5000;
 
 app.use(helmet());
 app.use(
   cors({
-    origin: true,
+    origin: process.env.CORS_ORIGIN === '*' ? true : process.env.CORS_ORIGIN?.split(',') || true,
     credentials: true,
   })
 );
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  "/api/auth",
-  rateLimit({ windowMs: 15 * 60 * 1000, max: 40, standardHeaders: true })
-);
-app.use(
-  "/api",
-  rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true })
-);
+app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
-// Render health check
-app.get("/", (_req, res) => {
-  res.json({
-    ok: true,
-    service: "shieldtap-api",
-    env: process.env.NODE_ENV || "development",
-  });
-});
-
-app.get("/health", (_req, res) =>
-  res.json({
-    ok: true,
-    service: "shieldtap-api",
-    cloudinary: Boolean(process.env.CLOUDINARY_CLOUD_NAME),
-    mongo: Boolean(process.env.MONGODB_URI),
-  })
-);
-
-app.use("/api/auth", authRoutes);
-app.use("/api/user", userRoutes);
-app.use("/api/files", fileRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/folders', folderRoutes);
+app.use('/api/vault', vaultRoutes);
+app.use('/api/user', userRoutes);
 
 app.use(errorHandler);
 
-await connectDb();
-app.listen(PORT, HOST, () => {
-  console.log(`API listening on http://${HOST}:${PORT}`);
+async function start() {
+  await connectDB();
+  initCloudinary();
+  app.listen(PORT, () => {
+    console.log(`🚀 ShieldTap API running on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });

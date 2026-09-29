@@ -1,13 +1,5 @@
-import mongoose from "mongoose";
-
-const cardSchema = new mongoose.Schema(
-  {
-    uid: { type: String, required: true },
-    label: { type: String, default: "" },
-    isPrimary: { type: Boolean, default: false },
-  },
-  { _id: false }
-);
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema(
   {
@@ -18,7 +10,7 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       minlength: 3,
-      maxlength: 32,
+      maxlength: 30,
     },
     email: {
       type: String,
@@ -27,18 +19,38 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
-    passwordHash: { type: String, required: true },
-    displayName: { type: String, default: "" },
-    photoUrl: { type: String, default: "" },
-    cards: { type: [cardSchema], default: [] },
-    mpinHash: { type: String, default: null },
-    emailVerified: { type: Boolean, default: false },
-    // OTP for reset / verify
-    otpHash: { type: String, default: null },
-    otpExpiresAt: { type: Date, default: null },
-    otpPurpose: { type: String, enum: ["verify", "reset", null], default: null },
+    phone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    passwordHash: {
+      type: String,
+      required: true,
+    },
+    // Profile
+    displayName: { type: String, default: '' },
+    avatarUrl: { type: String, default: '' },
+    backgroundUrl: { type: String, default: '' },
+    // Notifications log (simple)
+    notifications: [
+      {
+        type: { type: String }, // login | register | profile_update | lock
+        message: String,
+        createdAt: { type: Date, default: Date.now },
+        read: { type: Boolean, default: false },
+      },
+    ],
   },
   { timestamps: true }
 );
 
-export const User = mongoose.model("User", userSchema);
+userSchema.methods.comparePassword = async function (plain) {
+  return bcrypt.compare(plain, this.passwordHash);
+};
+
+userSchema.statics.hashPassword = async function (plain) {
+  return bcrypt.hash(plain, 12);
+};
+
+export default mongoose.model('User', userSchema);

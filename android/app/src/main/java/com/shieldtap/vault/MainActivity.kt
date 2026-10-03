@@ -12,27 +12,24 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
-import androidx.navigation.NavType
 import androidx.navigation.compose.*
-import androidx.navigation.navArgument
-import com.google.gson.Gson
 import com.shieldtap.vault.data.ApiClient
 import com.shieldtap.vault.data.FolderDto
 import com.shieldtap.vault.data.SessionStore
 import com.shieldtap.vault.ui.auth.LoginScreen
 import com.shieldtap.vault.ui.auth.RegisterScreen
 import com.shieldtap.vault.ui.auth.SetMpinScreen
+import com.shieldtap.vault.ui.components.UnlockScreen
 import com.shieldtap.vault.ui.folder.FolderScreen
 import com.shieldtap.vault.ui.home.HomeScreen
 import com.shieldtap.vault.ui.profile.ProfileScreen
 import com.shieldtap.vault.ui.settings.SettingsScreen
 import com.shieldtap.vault.ui.theme.ShieldTapTheme
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,8 +37,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val sessionStore = SessionStore(applicationContext)
-        ApiClient.setTokenProvider { 
-            // Blocking read is ok for interceptor in this simple setup
+        ApiClient.setTokenProvider {
             kotlinx.coroutines.runBlocking { sessionStore.getToken() }
         }
 
@@ -57,21 +53,21 @@ class MainActivity : ComponentActivity() {
                     token.isNullOrBlank() -> "login"
                     !mpinSet -> "set_mpin"
                     else -> {
-                        // Touch session to extend
                         try {
                             ApiClient.api.me()
+                            sessionStore.lock()
+                            "unlock"
                         } catch (_: Exception) {
                             sessionStore.clearSession()
                             "login"
                         }
-                        "main"
                     }
                 }
             }
 
             ShieldTapTheme(themeMode = themeMode) {
                 if (startRoute == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 } else {
@@ -95,8 +91,8 @@ fun AppNav(
     onThemeChange: (String) -> Unit
 ) {
     val navController = rememberNavController()
-    // Stack of folders for nested navigation
     var folderStack by remember { mutableStateOf<List<FolderDto>>(emptyList()) }
+    val unlocked by sessionStore.unlocked.collectAsState()
 
     NavHost(navController = navController, startDestination = startDestination) {
 
@@ -104,7 +100,6 @@ fun AppNav(
             LoginScreen(
                 sessionStore = sessionStore,
                 onLoginSuccess = {
-                    // After login → check MPIN
                     navController.navigate("set_mpin") {
                         popUpTo("login") { inclusive = true }
                     }
@@ -125,11 +120,11 @@ fun AppNav(
         }
 
         composable("set_mpin") {
-            // Only show if not already set
             val mpinSet by sessionStore.mpinSetFlow.collectAsState(initial = false)
             if (mpinSet) {
                 LaunchedEffect(Unit) {
-                    navController.navigate("main") {
+                    sessionStore.lock()
+                    navController.navigate("unlock") {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -137,6 +132,7 @@ fun AppNav(
                 SetMpinScreen(
                     sessionStore = sessionStore,
                     onMpinSet = {
+                        sessionStore.unlock()
                         navController.navigate("main") {
                             popUpTo(0) { inclusive = true }
                         }
@@ -145,46 +141,71 @@ fun AppNav(
             }
         }
 
-        composable("main") {
-            MainScaffold(
+        composable("unlock") {
+            UnlockScreen(
                 sessionStore = sessionStore,
-                themeMode = themeMode,
-                onThemeChange = onThemeChange,
-                onLogout = {
-                    navController.navigate("login") {
+                onUnlocked = {
+                    navController.navigate("main") {
                         popUpTo(0) { inclusive = true }
-                    }
-                },
-                onOpenFolder = { folder ->
-                    folderStack = listOf(folder)
-                    navController.navigate("folder")
-                },
-                onLockApp = {
-                    // Simple lock = go back to require MPIN again (we keep token)
-                    // For full lock we could clear a "unlocked" flag
-                    navController.navigate("set_mpin") {
-                        // force re-entry of MPIN by temporarily unsetting flag? 
-                        // Better: use a local unlocked state
                     }
                 }
             )
         }
 
-        composable("folder") {
-            val current = folderStack.lastOrNull()
-            if (current == null) {
-                LaunchedEffect(Unit) { navController.popBackStack() }
+        composable("main") {
+            if (!unlocked) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("unlock") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
             } else {
-                FolderScreen(
-                    folder = current,
-                    onBack = {
-                        folderStack = folderStack.dropLast(1)
-                        if (folderStack.isEmpty()) navController.popBackStack()
+                MainScaffold(
+                    sessionStore = sessionStore,
+                    themeMode = themeMode,
+                    onThemeChange = onThemeChange,
+                    onLogout = {
+                        navController.navigate("login") {
+                            popUpTo(0) { inclusive = true }
+                        }
                     },
-                    onOpenSubFolder = { sub ->
-                        folderStack = folderStack + sub
+                    onOpenFolder = { folder ->
+                        folderStack = listOf(folder)
+                        navController.navigate("folder")
+                    },
+                    onLockApp = {
+                        sessionStore.lock()
+                        navController.navigate("unlock") {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
                 )
+            }
+        }
+
+        composable("folder") {
+            if (!unlocked) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("unlock") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val current = folderStack.lastOrNull()
+                if (current == null) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    FolderScreen(
+                        folder = current,
+                        onBack = {
+                            folderStack = folderStack.dropLast(1)
+                            if (folderStack.isEmpty()) navController.popBackStack()
+                        },
+                        onOpenSubFolder = { sub ->
+                            folderStack = folderStack + sub
+                        }
+                    )
+                }
             }
         }
 
@@ -222,37 +243,49 @@ fun MainScaffold(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            // Pill-shaped bottom bar
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                shape = RoundedCornerShape(28.dp),
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp
+                    .padding(horizontal = 28.dp, vertical = 14.dp),
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+                tonalElevation = 0.dp,
+                shadowElevation = 12.dp
             ) {
                 NavigationBar(
-                    modifier = Modifier.clip(RoundedCornerShape(28.dp)),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    modifier = Modifier.clip(RoundedCornerShape(32.dp)),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.0f),
+                    tonalElevation = 0.dp
                 ) {
+                    val itemColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     NavigationBarItem(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
                         icon = { Icon(Icons.Default.Home, null) },
-                        label = { Text("Home") }
+                        label = { Text("Home") },
+                        colors = itemColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
                         icon = { Icon(Icons.Default.Star, null) },
-                        label = { Text("Soon") }
+                        label = { Text("Soon") },
+                        colors = itemColors
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
                         icon = { Icon(Icons.Default.Person, null) },
-                        label = { Text("Profile") }
+                        label = { Text("Profile") },
+                        colors = itemColors
                     )
                 }
             }
@@ -265,8 +298,14 @@ fun MainScaffold(
                     onOpenFolder = onOpenFolder,
                     onLockApp = onLockApp
                 )
-                1 -> Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    Text("Coming soon – you decide later")
+                1 -> Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Coming soon",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 2 -> ProfileScreen(
                     sessionStore = sessionStore,

@@ -16,7 +16,10 @@ import androidx.compose.ui.unit.dp
 import com.shieldtap.vault.data.ApiClient
 import com.shieldtap.vault.data.FolderDto
 import com.shieldtap.vault.data.SessionStore
+import com.shieldtap.vault.data.toUserMessage
+import com.shieldtap.vault.ui.components.GlassCard
 import com.shieldtap.vault.ui.components.MpinDialog
+import com.shieldtap.vault.ui.components.PillShape
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,6 +38,7 @@ fun HomeScreen(
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showMpin by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     fun load() {
         scope.launch {
@@ -44,7 +48,7 @@ fun HomeScreen(
                 folders = res["folders"] ?: emptyList()
                 error = null
             } catch (e: Exception) {
-                error = e.message
+                error = e.toUserMessage()
             } finally {
                 loading = false
             }
@@ -54,6 +58,8 @@ fun HomeScreen(
     LaunchedEffect(Unit) { load() }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("My Vaults", fontWeight = FontWeight.SemiBold) },
@@ -61,13 +67,18 @@ fun HomeScreen(
                     IconButton(onClick = onLockApp) {
                         Icon(Icons.Default.Lock, contentDescription = "Lock app")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showMpinForCreate = true },
-                containerColor = MaterialTheme.colorScheme.primary
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = PillShape
             ) {
                 Icon(Icons.Default.Add, contentDescription = "New folder")
             }
@@ -82,20 +93,28 @@ fun HomeScreen(
                 ) {
                     Text(error ?: "", color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { load() }) { Text("Retry") }
+                    Button(onClick = { load() }, shape = PillShape) { Text("Retry") }
                 }
                 folders.isEmpty() -> Column(
                     Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.outline
+                    )
                     Spacer(Modifier.height(12.dp))
                     Text("No folders yet")
-                    Text("Tap + to create your first vault", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Tap + to create your first vault",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 else -> LazyColumn(
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(folders, key = { it._id }) { folder ->
                         FolderCard(
@@ -112,9 +131,15 @@ fun HomeScreen(
                                 pendingAction = {
                                     scope.launch {
                                         try {
-                                            ApiClient.api.updateFolder(folder._id, mapOf("name" to name))
+                                            ApiClient.api.updateFolder(
+                                                folder._id,
+                                                mapOf("name" to name)
+                                            )
                                             load()
-                                        } catch (_: Exception) {}
+                                            snackbarHostState.showSnackbar("Folder renamed")
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar(e.toUserMessage())
+                                        }
                                     }
                                 }
                                 showMpin = true
@@ -125,7 +150,10 @@ fun HomeScreen(
                                         try {
                                             ApiClient.api.deleteFolder(folder._id)
                                             load()
-                                        } catch (_: Exception) {}
+                                            snackbarHostState.showSnackbar("Folder deleted")
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar(e.toUserMessage())
+                                        }
                                     }
                                 }
                                 showMpin = true
@@ -134,9 +162,18 @@ fun HomeScreen(
                                 pendingAction = {
                                     scope.launch {
                                         try {
-                                            ApiClient.api.updateFolder(folder._id, mapOf("isLocked" to !folder.isLocked))
+                                            ApiClient.api.updateFolder(
+                                                folder._id,
+                                                mapOf("isLocked" to !folder.isLocked)
+                                            )
                                             load()
-                                        } catch (_: Exception) {}
+                                            snackbarHostState.showSnackbar(
+                                                if (!folder.isLocked) "Folder locked"
+                                                else "Folder unlocked"
+                                            )
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar(e.toUserMessage())
+                                        }
                                     }
                                 }
                                 showMpin = true
@@ -178,13 +215,15 @@ fun HomeScreen(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { showCreate = false },
+            shape = RoundedCornerShape(24.dp),
             title = { Text("New Folder") },
             text = {
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
                     label = { Text("Folder name") },
-                    singleLine = true
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
                 )
             },
             confirmButton = {
@@ -192,12 +231,15 @@ fun HomeScreen(
                     if (newName.isNotBlank()) {
                         scope.launch {
                             try {
-                                ApiClient.api.createFolder(mapOf("name" to newName.trim(), "parentId" to null))
+                                ApiClient.api.createFolder(
+                                    mapOf("name" to newName.trim(), "parentId" to null)
+                                )
                                 newName = ""
                                 showCreate = false
                                 load()
+                                snackbarHostState.showSnackbar("Folder created")
                             } catch (e: Exception) {
-                                error = e.message
+                                snackbarHostState.showSnackbar(e.toUserMessage())
                             }
                         }
                     }
@@ -223,9 +265,14 @@ private fun FolderCard(
     var renameText by remember { mutableStateOf(folder.name) }
 
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(2.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Row(
             Modifier.padding(16.dp),
@@ -239,13 +286,26 @@ private fun FolderCard(
             )
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(folder.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    folder.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
                 if (folder.isLocked) {
-                    Text("Locked", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        "Locked",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
             if (folder.isLocked) {
-                Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Default.Lock,
+                    null,
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(18.dp)
+                )
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
@@ -254,15 +314,40 @@ private fun FolderCard(
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
                         text = { Text("Rename") },
-                        onClick = { menuOpen = false; renameOpen = true }
+                        onClick = {
+                            menuOpen = false
+                            renameText = folder.name
+                            renameOpen = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) }
                     )
                     DropdownMenuItem(
                         text = { Text(if (folder.isLocked) "Unlock" else "Lock") },
-                        onClick = { menuOpen = false; onToggleLock() }
+                        onClick = {
+                            menuOpen = false
+                            onToggleLock()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (folder.isLocked) Icons.Default.LockOpen
+                                else Icons.Default.Lock,
+                                null
+                            )
+                        }
                     )
                     DropdownMenuItem(
-                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                        onClick = { menuOpen = false; onDelete() }
+                        text = { Text("Delete") },
+                        onClick = {
+                            menuOpen = false
+                            onDelete()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     )
                 }
             }
@@ -272,17 +357,28 @@ private fun FolderCard(
     if (renameOpen) {
         AlertDialog(
             onDismissRequest = { renameOpen = false },
-            title = { Text("Rename") },
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("Rename folder") },
             text = {
-                OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true)
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    renameOpen = false
-                    if (renameText.isNotBlank()) onRename(renameText.trim())
+                    if (renameText.isNotBlank()) {
+                        onRename(renameText.trim())
+                        renameOpen = false
+                    }
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { renameOpen = false }) { Text("Cancel") }
+            }
         )
     }
 }

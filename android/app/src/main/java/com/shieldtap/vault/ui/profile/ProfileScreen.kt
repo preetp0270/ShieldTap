@@ -27,6 +27,9 @@ import com.shieldtap.vault.data.ApiClient
 import com.shieldtap.vault.data.NotificationDto
 import com.shieldtap.vault.data.SessionStore
 import com.shieldtap.vault.data.UserDto
+import com.shieldtap.vault.data.toUserMessage
+import com.shieldtap.vault.ui.components.PillButton
+import com.shieldtap.vault.ui.components.PillShape
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -44,6 +47,7 @@ fun ProfileScreen(
     var loading by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     fun load() {
         scope.launch {
@@ -57,11 +61,11 @@ fun ProfileScreen(
                     me.expiresAt,
                     Gson().toJson(me.user)
                 )
-            } catch (_: Exception) {
-                // fallback to cached
+            } catch (e: Exception) {
                 sessionStore.getUserJson()?.let {
                     user = Gson().fromJson(it, UserDto::class.java)
                 }
+                snackbarHostState.showSnackbar(e.toUserMessage())
             } finally {
                 loading = false
             }
@@ -81,7 +85,10 @@ fun ProfileScreen(
                 )
                 ApiClient.api.uploadAvatar(part)
                 load()
-            } catch (_: Exception) {}
+                snackbarHostState.showSnackbar("Avatar updated")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.toUserMessage())
+            }
         }
     }
 
@@ -96,11 +103,16 @@ fun ProfileScreen(
                 )
                 ApiClient.api.uploadBackground(part)
                 load()
-            } catch (_: Exception) {}
+                snackbarHostState.showSnackbar("Background updated")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.toUserMessage())
+            }
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Profile") },
@@ -108,17 +120,22 @@ fun ProfileScreen(
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
         if (loading && user == null) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
                 CircularProgressIndicator()
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                // Background + Avatar header
                 item {
                     Box(
                         modifier = Modifier
@@ -137,10 +154,9 @@ fun ProfileScreen(
                             Box(
                                 Modifier
                                     .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                             )
                         }
-                        // Avatar
                         Box(
                             Modifier
                                 .align(Alignment.BottomStart)
@@ -172,7 +188,10 @@ fun ProfileScreen(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
-                        Text("@${user?.username ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "@${user?.username ?: ""}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium)
                         if (!user?.phone.isNullOrBlank()) {
@@ -219,23 +238,24 @@ fun ProfileScreen(
 
                 item {
                     Spacer(Modifier.height(24.dp))
-                    Button(
+                    PillButton(
+                        text = "Logout",
                         onClick = {
                             scope.launch {
-                                try { ApiClient.api.logout() } catch (_: Exception) {}
+                                try {
+                                    ApiClient.api.logout()
+                                } catch (_: Exception) {
+                                }
                                 sessionStore.clearSession()
                                 onLogout()
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                    ) {
-                        Icon(Icons.Default.Logout, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Logout")
-                    }
+                    )
                     Spacer(Modifier.height(32.dp))
                 }
             }

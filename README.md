@@ -19,11 +19,13 @@ ShieldTap/
 - Session expires after **5 days of inactivity**; every API call extends it by 5 days  
 - After register → user must login (no auto-login)
 
-### Device MPIN
+### Device MPIN + App Lock
 - Asked once after first login (stored **only on device**, encrypted)  
-- Required for: create main folder, rename / delete / lock main folders  
+- **App unlock**: required every time the app is opened (or after you tap Lock)  
+- Also required for: create / rename / delete / lock main folders  
 - Nested folders do **not** need MPIN  
-- 3 wrong password **or** MPIN attempts → lock for 5 minutes
+- 3 wrong password **or** MPIN attempts → lock for 5 minutes  
+- UI: monochrome black / white / grey with glass cards and pill controls
 
 ### Home
 - Pill-shaped bottom navigation: **Home | Soon | Profile**  

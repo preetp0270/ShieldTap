@@ -7,6 +7,9 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -19,6 +22,10 @@ class SessionStore(private val context: Context) {
     private val USER_JSON = stringPreferencesKey("user_json")
     private val THEME = stringPreferencesKey("theme_mode") // system | light | dark
     private val MPIN_SET = booleanPreferencesKey("mpin_set")
+
+    // In-memory unlock state (resets when process dies → app is locked again)
+    private val _unlocked = MutableStateFlow(false)
+    val unlocked: StateFlow<Boolean> = _unlocked.asStateFlow()
 
     // Encrypted storage for MPIN (device-only)
     private val encryptedPrefs by lazy {
@@ -52,6 +59,7 @@ class SessionStore(private val context: Context) {
             it.remove(EXPIRES)
             it.remove(USER_JSON)
         }
+        _unlocked.value = false
         // Keep MPIN – it is device-bound
     }
 
@@ -63,10 +71,20 @@ class SessionStore(private val context: Context) {
         context.dataStore.edit { it[THEME] = mode }
     }
 
+    // ---- App lock / unlock ----
+    fun unlock() {
+        _unlocked.value = true
+    }
+
+    fun lock() {
+        _unlocked.value = false
+    }
+
+    fun isUnlocked(): Boolean = _unlocked.value
+
     // ---- MPIN (never leaves the device) ----
     fun saveMpin(mpin: String) {
         encryptedPrefs.edit().putString("mpin", mpin).apply()
-        // also mark flag in normal datastore
     }
 
     suspend fun markMpinSet(set: Boolean) {

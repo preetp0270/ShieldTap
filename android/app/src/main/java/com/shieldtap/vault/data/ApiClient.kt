@@ -12,7 +12,7 @@ object ApiClient {
     // Change this to your backend URL
     // Emulator → http://10.0.2.2:5000/api/
     // Real device → http://YOUR_PC_IP:5000/api/  or deployed URL
-    var BASE_URL = "http://10.0.2.2:5000/api/"
+    var BASE_URL = "https://shieldtap.onrender.com/api/"
 
     private var tokenProvider: (() -> String?)? = null
 
@@ -32,7 +32,8 @@ object ApiClient {
     }
 
     private val logging = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        // BASIC avoids dumping tokens/passwords into logcat
+        level = HttpLoggingInterceptor.Level.BASIC
     }
 
     private val client = OkHttpClient.Builder()

@@ -22,6 +22,8 @@ import coil.compose.AsyncImage
 import com.shieldtap.vault.data.ApiClient
 import com.shieldtap.vault.data.FolderDto
 import com.shieldtap.vault.data.VaultItemDto
+import com.shieldtap.vault.data.toUserMessage
+import com.shieldtap.vault.ui.components.PillShape
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -45,6 +47,9 @@ fun FolderScreen(
     var passValue by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val textMedia = "text/plain".toMediaTypeOrNull()
 
     fun load() {
         scope.launch {
@@ -54,7 +59,8 @@ fun FolderScreen(
                 subFolders = fRes["folders"] ?: emptyList()
                 val iRes = ApiClient.api.getVaultItems(folder._id)
                 items = iRes["items"] ?: emptyList()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.toUserMessage())
             } finally {
                 loading = false
             }
@@ -74,12 +80,15 @@ fun FolderScreen(
                 )
                 ApiClient.api.uploadFile(
                     part,
-                    folder._id.toRequestBody(),
-                    "image".toRequestBody(),
+                    folder._id.toRequestBody(textMedia),
+                    "image".toRequestBody(textMedia),
                     null
                 )
                 load()
-            } catch (_: Exception) {}
+                snackbarHostState.showSnackbar("Photo uploaded")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.toUserMessage())
+            }
         }
     }
 
@@ -95,16 +104,21 @@ fun FolderScreen(
                 )
                 ApiClient.api.uploadFile(
                     part,
-                    folder._id.toRequestBody(),
-                    "file".toRequestBody(),
-                    name.toRequestBody()
+                    folder._id.toRequestBody(textMedia),
+                    "file".toRequestBody(textMedia),
+                    name.toRequestBody(textMedia)
                 )
                 load()
-            } catch (_: Exception) {}
+                snackbarHostState.showSnackbar("File uploaded")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.toUserMessage())
+            }
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(folder.name, fontWeight = FontWeight.SemiBold) },
@@ -113,15 +127,18 @@ fun FolderScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
                     }
                 },
-                actions = {
-                    IconButton(onClick = { /* lock this folder – only main folders, handled on home */ }) {
-                        Icon(Icons.Default.Lock, null)
-                    }
-                }
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddMenu = true }) {
+            FloatingActionButton(
+                onClick = { showAddMenu = true },
+                shape = PillShape,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
                 Icon(Icons.Default.Add, null)
             }
         }
@@ -136,40 +153,76 @@ fun FolderScreen(
                 ) {
                     if (subFolders.isNotEmpty()) {
                         item {
-                            Text("Folders", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "Folders",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                             Spacer(Modifier.height(4.dp))
                         }
                         items(subFolders, key = { it._id }) { sf ->
-                            ListItem(
-                                headlineContent = { Text(sf.name) },
-                                leadingContent = { Icon(Icons.Default.Folder, null) },
-                                modifier = Modifier.clickable { onOpenSubFolder(sf) }
-                            )
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
+                                ),
+                                elevation = CardDefaults.cardElevation(0.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenSubFolder(sf) }
+                            ) {
+                                ListItem(
+                                    headlineContent = { Text(sf.name) },
+                                    leadingContent = { Icon(Icons.Default.Folder, null) },
+                                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+                                )
+                            }
                         }
                     }
                     if (items.isNotEmpty()) {
                         item {
                             Spacer(Modifier.height(8.dp))
-                            Text("Items", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "Items",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                             Spacer(Modifier.height(4.dp))
                         }
                         items(items, key = { it._id }) { item ->
-                            VaultItemRow(item = item, onDelete = {
-                                scope.launch {
-                                    try {
-                                        ApiClient.api.deleteItem(item._id)
-                                        load()
-                                    } catch (_: Exception) {}
+                            VaultItemRow(
+                                item = item,
+                                onDelete = {
+                                    scope.launch {
+                                        try {
+                                            ApiClient.api.deleteItem(item._id)
+                                            load()
+                                            snackbarHostState.showSnackbar("Deleted")
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar(e.toUserMessage())
+                                        }
+                                    }
                                 }
-                            })
+                            )
                         }
                     }
                     if (subFolders.isEmpty() && items.isEmpty()) {
                         item {
-                            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier.fillMaxWidth().padding(48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.Inbox, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
-                                    Text("Empty folder", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Icon(
+                                        Icons.Default.Inbox,
+                                        null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.outline
+                                    )
+                                    Text(
+                                        "Empty folder",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -182,37 +235,73 @@ fun FolderScreen(
     if (showAddMenu) {
         AlertDialog(
             onDismissRequest = { showAddMenu = false },
+            shape = RoundedCornerShape(24.dp),
             title = { Text("Add to folder") },
             text = {
                 Column {
-                    TextButton(onClick = { showAddMenu = false; showPasswordDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Key, null); Spacer(Modifier.width(8.dp)); Text("Password")
+                    TextButton(
+                        onClick = { showAddMenu = false; showPasswordDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Key, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Password")
                     }
-                    TextButton(onClick = { showAddMenu = false; imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Image, null); Spacer(Modifier.width(8.dp)); Text("Photo")
+                    TextButton(
+                        onClick = { showAddMenu = false; imagePicker.launch("image/*") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Image, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Photo")
                     }
-                    TextButton(onClick = { showAddMenu = false; filePicker.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.InsertDriveFile, null); Spacer(Modifier.width(8.dp)); Text("File")
+                    TextButton(
+                        onClick = { showAddMenu = false; filePicker.launch("*/*") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.InsertDriveFile, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("File")
                     }
-                    TextButton(onClick = { showAddMenu = false; showNewFolder = true }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.CreateNewFolder, null); Spacer(Modifier.width(8.dp)); Text("New sub-folder")
+                    TextButton(
+                        onClick = { showAddMenu = false; showNewFolder = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.CreateNewFolder, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("New sub-folder")
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { showAddMenu = false }) { Text("Close") } }
+            dismissButton = {
+                TextButton(onClick = { showAddMenu = false }) { Text("Close") }
+            }
         )
     }
 
     if (showPasswordDialog) {
         AlertDialog(
             onDismissRequest = { showPasswordDialog = false },
+            shape = RoundedCornerShape(24.dp),
             title = { Text("Add Password") },
             text = {
                 Column {
-                    OutlinedTextField(value = passKey, onValueChange = { passKey = it }, label = { Text("Key (e.g. Gmail)") }, singleLine = true)
+                    OutlinedTextField(
+                        value = passKey,
+                        onValueChange = { passKey = it },
+                        label = { Text("Key (e.g. Gmail)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp)
+                    )
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = passValue, onValueChange = { passValue = it }, label = { Text("Value (password)") }, singleLine = true)
+                    OutlinedTextField(
+                        value = passValue,
+                        onValueChange = { passValue = it },
+                        label = { Text("Value (password)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp)
+                    )
                 }
             },
             confirmButton = {
@@ -220,42 +309,70 @@ fun FolderScreen(
                     if (passKey.isNotBlank() && passValue.isNotBlank()) {
                         scope.launch {
                             try {
-                                ApiClient.api.addPassword(mapOf("folderId" to folder._id, "key" to passKey, "value" to passValue))
-                                passKey = ""; passValue = ""
+                                ApiClient.api.addPassword(
+                                    mapOf(
+                                        "folderId" to folder._id,
+                                        "key" to passKey,
+                                        "value" to passValue
+                                    )
+                                )
+                                passKey = ""
+                                passValue = ""
                                 showPasswordDialog = false
                                 load()
-                            } catch (_: Exception) {}
+                                snackbarHostState.showSnackbar("Password saved")
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar(e.toUserMessage())
+                            }
                         }
                     }
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { showPasswordDialog = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { showPasswordDialog = false }) { Text("Cancel") }
+            }
         )
     }
 
     if (showNewFolder) {
         AlertDialog(
             onDismissRequest = { showNewFolder = false },
+            shape = RoundedCornerShape(24.dp),
             title = { Text("New sub-folder") },
             text = {
-                OutlinedTextField(value = newFolderName, onValueChange = { newFolderName = it }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(
+                    value = newFolderName,
+                    onValueChange = { newFolderName = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
             },
             confirmButton = {
                 TextButton(onClick = {
                     if (newFolderName.isNotBlank()) {
                         scope.launch {
                             try {
-                                // Nested folders – no MPIN required
-                                ApiClient.api.createFolder(mapOf("name" to newFolderName.trim(), "parentId" to folder._id))
+                                ApiClient.api.createFolder(
+                                    mapOf(
+                                        "name" to newFolderName.trim(),
+                                        "parentId" to folder._id
+                                    )
+                                )
                                 newFolderName = ""
                                 showNewFolder = false
                                 load()
-                            } catch (_: Exception) {}
+                                snackbarHostState.showSnackbar("Sub-folder created")
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar(e.toUserMessage())
+                            }
                         }
                     }
                 }) { Text("Create") }
             },
-            dismissButton = { TextButton(onClick = { showNewFolder = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { showNewFolder = false }) { Text("Cancel") }
+            }
         )
     }
 }
@@ -264,7 +381,11 @@ fun FolderScreen(
 private fun VaultItemRow(item: VaultItemDto, onDelete: () -> Unit) {
     var showValue by remember { mutableStateOf(false) }
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
+        ),
+        elevation = CardDefaults.cardElevation(0.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -280,11 +401,19 @@ private fun VaultItemRow(item: VaultItemDto, onDelete: () -> Unit) {
                         )
                     }
                     IconButton(onClick = { showValue = !showValue }) {
-                        Icon(if (showValue) Icons.Default.VisibilityOff else Icons.Default.Visibility, null)
+                        Icon(
+                            if (showValue) Icons.Default.VisibilityOff
+                            else Icons.Default.Visibility,
+                            null
+                        )
                     }
                 }
                 "image" -> {
-                    AsyncImage(model = item.url, contentDescription = null, modifier = Modifier.size(48.dp))
+                    AsyncImage(
+                        model = item.url,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp)
+                    )
                     Spacer(Modifier.width(12.dp))
                     Text(item.title ?: "Image", modifier = Modifier.weight(1f))
                 }
@@ -295,7 +424,11 @@ private fun VaultItemRow(item: VaultItemDto, onDelete: () -> Unit) {
                 }
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    Icons.Default.Delete,
+                    null,
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }

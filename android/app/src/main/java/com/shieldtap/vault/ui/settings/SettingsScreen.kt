@@ -2,6 +2,7 @@ package com.shieldtap.vault.ui.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DarkMode
@@ -26,12 +27,13 @@ fun SettingsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val options = listOf(
-        "system" to "System default" to Icons.Default.PhoneAndroid,
-        "light" to "Light" to Icons.Default.LightMode,
-        "dark" to "Dark" to Icons.Default.DarkMode
+        Triple("system", "System default", Icons.Default.PhoneAndroid),
+        Triple("light", "Light", Icons.Default.LightMode),
+        Triple("dark", "Dark", Icons.Default.DarkMode)
     )
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
@@ -39,7 +41,10 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
@@ -47,29 +52,38 @@ fun SettingsScreen(
             Text("Appearance", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
 
-            options.forEach { (pair, icon) ->
-                val (value, label) = pair
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = currentTheme == value,
-                            onClick = {
-                                onThemeChange(value)
-                                scope.launch { sessionStore.setTheme(value) }
-                            },
-                            role = Role.RadioButton
-                        )
-                        .padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(icon, null)
-                    Spacer(Modifier.width(16.dp))
-                    Text(label, modifier = Modifier.weight(1f))
-                    RadioButton(
-                        selected = currentTheme == value,
-                        onClick = null
-                    )
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
+                ),
+                elevation = CardDefaults.cardElevation(0.dp)
+            ) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    options.forEach { (value, label, icon) ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = currentTheme == value,
+                                    onClick = {
+                                        onThemeChange(value)
+                                        scope.launch { sessionStore.setTheme(value) }
+                                    },
+                                    role = Role.RadioButton
+                                )
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(icon, null)
+                            Spacer(Modifier.width(16.dp))
+                            Text(label, modifier = Modifier.weight(1f))
+                            RadioButton(
+                                selected = currentTheme == value,
+                                onClick = null
+                            )
+                        }
+                    }
                 }
             }
 
@@ -77,7 +91,7 @@ fun SettingsScreen(
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
             Text(
-                "Theme applies to every screen in the app.",
+                "Theme uses a black / white / grey palette with glass surfaces throughout the app.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

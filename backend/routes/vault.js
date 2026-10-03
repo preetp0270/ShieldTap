@@ -114,12 +114,29 @@ router.delete('/:id', async (req, res, next) => {
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
     if (item.publicId) {
-      try {
-        await cloudinary.uploader.destroy(item.publicId, {
-          resource_type: item.type === 'image' ? 'image' : 'raw',
-        });
-      } catch (e) {
-        console.warn('Cloudinary delete failed', e.message);
+      // Upload used resource_type: 'auto', so assets may be image | raw | video.
+      // Try the most likely type first, then fall back.
+      const typesToTry =
+        item.type === 'image'
+          ? ['image', 'raw', 'video']
+          : ['raw', 'image', 'video'];
+      let deleted = false;
+      for (const rt of typesToTry) {
+        try {
+          const result = await cloudinary.uploader.destroy(item.publicId, {
+            resource_type: rt,
+            invalidate: true,
+          });
+          if (result?.result === 'ok' || result?.result === 'not found') {
+            deleted = true;
+            break;
+          }
+        } catch {
+          // try next resource_type
+        }
+      }
+      if (!deleted) {
+        console.warn('Cloudinary delete failed for', item.publicId);
       }
     }
 

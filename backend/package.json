@@ -2,11 +2,11 @@
   "name": "shieldtap-api",
   "version": "2.0.0",
   "description": "ShieldTap Vault API – Auth, Sessions, Folders, Passwords, Files (MongoDB + Cloudinary)",
-  "main": "src/index.js",
+  "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "engines": {
     "node": ">=18"

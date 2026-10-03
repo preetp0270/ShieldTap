@@ -9,9 +9,10 @@ import authRoutes from './routes/auth.js';
 import folderRoutes from './routes/folders.js';
 import vaultRoutes from './routes/vault.js';
 import userRoutes from './routes/user.js';
-
+import dns from 'dns';
 const app = express();
 const PORT = process.env.PORT || 5000;
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 app.use(helmet());
 app.use(

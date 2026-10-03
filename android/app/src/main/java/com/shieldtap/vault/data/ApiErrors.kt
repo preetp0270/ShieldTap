@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import retrofit2.HttpException
 import java.io.IOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
@@ -17,9 +18,22 @@ fun Throwable.toUserMessage(): String {
             val body = response()?.errorBody()?.string()
             parseBackendError(body) ?: "Request failed (${code()})"
         }
-        is UnknownHostException -> "No internet connection"
-        is SocketTimeoutException -> "Server took too long to respond"
-        is IOException -> message?.takeIf { it.isNotBlank() } ?: "Network error"
+        is UnknownHostException ->
+            "Cannot reach server. Check BASE_URL and that the backend is running."
+        is ConnectException ->
+            "Connection refused. Is the backend running on port 5000?"
+        is SocketTimeoutException ->
+            "Server took too long to respond. Backend may be down or MongoDB is not connected."
+        is IOException -> {
+            val m = message?.lowercase() ?: ""
+            when {
+                m.contains("failed to connect") || m.contains("connection refused") ->
+                    "Connection refused. Is the backend running on port 5000?"
+                m.contains("timeout") ->
+                    "Server took too long to respond. Backend may be down or MongoDB is not connected."
+                else -> message?.takeIf { it.isNotBlank() } ?: "Network error"
+            }
+        }
         else -> message?.takeIf { it.isNotBlank() && !it.startsWith("HTTP ") }
             ?: "Something went wrong"
     }

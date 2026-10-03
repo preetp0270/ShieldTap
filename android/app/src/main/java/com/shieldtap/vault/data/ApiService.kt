@@ -25,7 +25,7 @@ interface ApiService {
     suspend fun createFolder(@Body body: Map<String, String?>): Map<String, FolderDto>
 
     @PATCH("folders/{id}")
-    suspend fun updateFolder(@Path("id") id: String, @Body body: Map<String, Any?>): Map<String, FolderDto>
+    suspend fun updateFolder(@Path("id") id: String, @Body body: UpdateFolderRequest): Map<String, FolderDto>
 
     @DELETE("folders/{id}")
     suspend fun deleteFolder(@Path("id") id: String): ApiMessage

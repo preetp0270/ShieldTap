@@ -15,7 +15,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.shieldtap.vault.data.ApiClient
 import com.shieldtap.vault.data.FolderDto
+import com.shieldtap.vault.data.NfcStore
 import com.shieldtap.vault.data.SessionStore
+import com.shieldtap.vault.data.UpdateFolderRequest
 import com.shieldtap.vault.data.toUserMessage
 import com.shieldtap.vault.ui.components.GlassCard
 import com.shieldtap.vault.ui.components.MpinDialog
@@ -26,6 +28,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     sessionStore: SessionStore,
+    nfcStore: NfcStore,
+    nfcUidEvent: String?,
+    onNfcConsumed: () -> Unit,
     onOpenFolder: (FolderDto) -> Unit,
     onLockApp: () -> Unit
 ) {
@@ -133,7 +138,7 @@ fun HomeScreen(
                                         try {
                                             ApiClient.api.updateFolder(
                                                 folder._id,
-                                                mapOf("name" to name)
+                                                UpdateFolderRequest(name = name)
                                             )
                                             load()
                                             snackbarHostState.showSnackbar("Folder renamed")
@@ -164,7 +169,7 @@ fun HomeScreen(
                                         try {
                                             ApiClient.api.updateFolder(
                                                 folder._id,
-                                                mapOf("isLocked" to !folder.isLocked)
+                                                UpdateFolderRequest(isLocked = !folder.isLocked)
                                             )
                                             load()
                                             snackbarHostState.showSnackbar(
@@ -188,7 +193,10 @@ fun HomeScreen(
     if (showMpinForCreate) {
         MpinDialog(
             sessionStore = sessionStore,
-            title = "Enter MPIN to create folder",
+            nfcStore = nfcStore,
+            nfcUidEvent = nfcUidEvent,
+            onNfcConsumed = onNfcConsumed,
+            title = "MPIN or tap NFC card",
             onSuccess = {
                 showMpinForCreate = false
                 showCreate = true
@@ -200,6 +208,10 @@ fun HomeScreen(
     if (showMpin && pendingAction != null) {
         MpinDialog(
             sessionStore = sessionStore,
+            nfcStore = nfcStore,
+            nfcUidEvent = nfcUidEvent,
+            onNfcConsumed = onNfcConsumed,
+            title = "MPIN or tap NFC card",
             onSuccess = {
                 showMpin = false
                 pendingAction?.invoke()

@@ -1,17 +1,21 @@
 package com.shieldtap.vault.ui.components
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
@@ -19,18 +23,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.shieldtap.vault.data.NfcStore
 import com.shieldtap.vault.data.SessionStore
 import com.shieldtap.vault.ui.theme.GlassBlack
 import com.shieldtap.vault.ui.theme.GlassWhite
 import com.shieldtap.vault.ui.theme.GlassWhiteStrong
 
-/** Pill shape used across the app */
 val PillShape = RoundedCornerShape(50)
-
-/** Soft card radius */
 val CardShape = RoundedCornerShape(20.dp)
 
-/** Glass surface – semi-transparent with subtle border */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -52,7 +53,6 @@ fun GlassCard(
     )
 }
 
-/** Pill-shaped primary button */
 @Composable
 fun PillButton(
     text: String,
@@ -88,50 +88,128 @@ fun PillButton(
     }
 }
 
-/** Outlined pill button */
+/** Pulsing shield-style loader for slow servers (e.g. Render cold start) */
 @Composable
-fun PillOutlinedButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true
+fun ShieldLoadingAnimation(
+    message: String = "Connecting to vault…",
+    subMessage: String = "Server may be waking up, please wait"
 ) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        shape = PillShape,
-        contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
-        modifier = modifier.height(52.dp)
+    val infinite = rememberInfiniteTransition(label = "load")
+    val scale by infinite.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+    val alpha by infinite.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Box(contentAlignment = Alignment.Center) {
+            // Outer ring
+            Box(
+                Modifier
+                    .size(88.dp)
+                    .scale(scale)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f * alpha))
+            )
+            Box(
+                Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            )
+            Icon(
+                Icons.Default.Lock,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = alpha)
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(message, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            subMessage,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth(0.55f)
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp)),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
     }
 }
 
 /**
- * Asks for MPIN. On success calls onSuccess.
- * Handles 3-strike lock.
+ * Auth gate: MPIN and/or NFC card.
+ * If NFC card is registered, user can tap card instead of typing MPIN.
  */
 @Composable
 fun MpinDialog(
     sessionStore: SessionStore,
-    title: String = "Enter MPIN",
+    nfcStore: NfcStore? = null,
+    nfcUidEvent: String? = null,
+    onNfcConsumed: () -> Unit = {},
+    title: String = "Enter MPIN or tap card",
     onSuccess: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var mpin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val hasNfc = nfcStore?.isCardRegistered() == true
+
+    // React to NFC tag from activity
+    LaunchedEffect(nfcUidEvent) {
+        val uid = nfcUidEvent ?: return@LaunchedEffect
+        if (nfcStore != null && nfcStore.matches(uid)) {
+            sessionStore.resetFailedAttempts()
+            onNfcConsumed()
+            onSuccess()
+        } else if (nfcStore != null && nfcStore.isCardRegistered()) {
+            error = "Unknown NFC card"
+            onNfcConsumed()
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         GlassCard(radius = 24.dp, modifier = Modifier.fillMaxWidth()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.Lock,
+                    if (hasNfc) Icons.Default.Nfc else Icons.Default.Lock,
                     null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(36.dp)
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(title, style = MaterialTheme.typography.titleMedium)
+                if (hasNfc) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Hold your NFC card near the phone",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
 
                 if (sessionStore.isLocked()) {
@@ -208,14 +286,31 @@ fun ConfirmDialog(
     )
 }
 
-/** Full-screen unlock gate when app is locked */
+/** Full-screen unlock: MPIN or NFC */
 @Composable
 fun UnlockScreen(
     sessionStore: SessionStore,
+    nfcStore: NfcStore? = null,
+    nfcUidEvent: String? = null,
+    onNfcConsumed: () -> Unit = {},
     onUnlocked: () -> Unit
 ) {
     var mpin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val hasNfc = nfcStore?.isCardRegistered() == true
+
+    LaunchedEffect(nfcUidEvent) {
+        val uid = nfcUidEvent ?: return@LaunchedEffect
+        if (nfcStore != null && nfcStore.matches(uid)) {
+            sessionStore.resetFailedAttempts()
+            sessionStore.unlock()
+            onNfcConsumed()
+            onUnlocked()
+        } else if (nfcStore != null && nfcStore.isCardRegistered()) {
+            error = "Unknown NFC card"
+            onNfcConsumed()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -238,7 +333,7 @@ fun UnlockScreen(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.Lock,
+                    if (hasNfc) Icons.Default.Nfc else Icons.Default.Lock,
                     null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(48.dp)
@@ -246,7 +341,8 @@ fun UnlockScreen(
                 Spacer(Modifier.height(16.dp))
                 Text("ShieldTap Locked", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "Enter your device MPIN to continue",
+                    if (hasNfc) "Tap your NFC card or enter MPIN"
+                    else "Enter your device MPIN to continue",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )

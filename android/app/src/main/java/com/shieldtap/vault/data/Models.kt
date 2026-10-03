@@ -37,6 +37,12 @@ data class FolderDto(
     val color: String? = null
 )
 
+data class UpdateFolderRequest(
+    val name: String? = null,
+    val isLocked: Boolean? = null,
+    val color: String? = null
+)
+
 data class VaultItemDto(
     val _id: String,
     val type: String,          // password | file | image

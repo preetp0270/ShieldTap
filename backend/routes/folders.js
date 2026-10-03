@@ -33,7 +33,6 @@ router.post('/', async (req, res, next) => {
     const data = createSchema.parse(req.body);
     const parentId = data.parentId || null;
 
-    // If creating root folder, client must have verified MPIN (we trust client for device MPIN)
     const folder = await Folder.create({
       userId: req.user._id,
       name: data.name.trim(),
@@ -58,10 +57,17 @@ router.patch('/:id', async (req, res, next) => {
     if (req.body.name !== undefined) {
       folder.name = String(req.body.name).trim().slice(0, 100);
     }
-    if (typeof req.body.isLocked === 'boolean' && folder.parentId === null) {
-      // Only main folders can be locked
-      folder.isLocked = req.body.isLocked;
+
+    // Accept boolean or string; only root folders (no parent) can be locked
+    const isRoot = folder.parentId == null || folder.parentId === undefined;
+    if (req.body.isLocked !== undefined) {
+      if (!isRoot) {
+        return res.status(400).json({ error: 'Only main (root) folders can be locked' });
+      }
+      const v = req.body.isLocked;
+      folder.isLocked = v === true || v === 'true' || v === 1 || v === '1';
     }
+
     if (req.body.color) folder.color = req.body.color;
 
     await folder.save();
@@ -77,7 +83,6 @@ router.delete('/:id', async (req, res, next) => {
     const folder = await Folder.findOne({ _id: req.params.id, userId: req.user._id });
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
-    // Recursively collect all descendant folder IDs
     const toDelete = [folder._id];
     let queue = [folder._id];
     while (queue.length) {

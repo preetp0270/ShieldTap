@@ -21,16 +21,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
 import com.shieldtap.vault.data.ApiClient
+import com.shieldtap.vault.data.NfcStore
 import com.shieldtap.vault.data.SessionStore
 import com.shieldtap.vault.data.toUserMessage
 import com.shieldtap.vault.ui.components.GlassCard
 import com.shieldtap.vault.ui.components.PillButton
+import com.shieldtap.vault.ui.components.ShieldLoadingAnimation
 import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     sessionStore: SessionStore,
+    nfcStore: NfcStore,
+    nfcUidEvent: String?,
+    onNfcConsumed: () -> Unit,
     onLoginSuccess: () -> Unit,
+    onQuickUnlock: () -> Unit,
     onGoRegister: () -> Unit
 ) {
     var username by remember { mutableStateOf("") }
@@ -38,7 +44,44 @@ fun LoginScreen(
     var showPass by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var hasSavedSession by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val hasNfc = nfcStore.isCardRegistered()
+
+    LaunchedEffect(Unit) {
+        hasSavedSession = !sessionStore.getToken().isNullOrBlank()
+    }
+
+    // NFC on login: if card matches + we still have a saved token → quick unlock (no password)
+    LaunchedEffect(nfcUidEvent) {
+        val uid = nfcUidEvent ?: return@LaunchedEffect
+        if (!nfcStore.matches(uid)) {
+            if (nfcStore.isCardRegistered()) {
+                error = "Unknown NFC card"
+            }
+            onNfcConsumed()
+            return@LaunchedEffect
+        }
+        onNfcConsumed()
+        val token = sessionStore.getToken()
+        if (token.isNullOrBlank()) {
+            error = "Card recognized. Please log in with password once, then card works offline."
+            return@LaunchedEffect
+        }
+        loading = true
+        error = null
+        try {
+            ApiClient.api.me() // validate / extend session
+            sessionStore.unlock()
+            onQuickUnlock()
+        } catch (e: Exception) {
+            error = "Session expired. Log in with password, then use card again."
+            sessionStore.clearSession()
+            hasSavedSession = false
+        } finally {
+            loading = false
+        }
+    }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Box(
@@ -54,115 +97,136 @@ fun LoginScreen(
                     )
                 )
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(Modifier.height(48.dp))
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(16.dp))
-                Text("ShieldTap", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "Secure personal vault",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(36.dp))
-
-                GlassCard(radius = 24.dp, modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("Username") },
-                        leadingIcon = { Icon(Icons.Default.Person, null) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
+            if (loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    ShieldLoadingAnimation(
+                        message = "Signing you in…",
+                        subMessage = "Server may be waking up — this can take up to a minute"
                     )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        leadingIcon = { Icon(Icons.Default.Lock, null) },
-                        trailingIcon = {
-                            IconButton(onClick = { showPass = !showPass }) {
-                                Icon(
-                                    if (showPass) Icons.Default.VisibilityOff
-                                    else Icons.Default.Visibility,
-                                    null
-                                )
-                            }
-                        },
-                        visualTransformation = if (showPass) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp)
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Spacer(Modifier.height(48.dp))
+                    Icon(
+                        if (hasNfc) Icons.Default.Nfc else Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
+                    Spacer(Modifier.height(16.dp))
+                    Text("ShieldTap", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (hasNfc && hasSavedSession)
+                            "Tap your NFC card to unlock"
+                        else
+                            "Secure personal vault",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(36.dp))
 
-                    error?.let {
-                        Spacer(Modifier.height(10.dp))
-                        Text(it, color = MaterialTheme.colorScheme.error)
+                    GlassCard(radius = 24.dp, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = { username = it },
+                            label = { Text("Username") },
+                            leadingIcon = { Icon(Icons.Default.Person, null) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Password") },
+                            leadingIcon = { Icon(Icons.Default.Lock, null) },
+                            trailingIcon = {
+                                IconButton(onClick = { showPass = !showPass }) {
+                                    Icon(
+                                        if (showPass) Icons.Default.VisibilityOff
+                                        else Icons.Default.Visibility,
+                                        null
+                                    )
+                                }
+                            },
+                            visualTransformation = if (showPass) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        error?.let {
+                            Spacer(Modifier.height(10.dp))
+                            Text(it, color = MaterialTheme.colorScheme.error)
+                        }
+
+                        Spacer(Modifier.height(20.dp))
+                        PillButton(
+                            text = "Login",
+                            loading = false,
+                            onClick = {
+                                if (username.isBlank() || password.isBlank()) {
+                                    error = "Fill all fields"
+                                    return@PillButton
+                                }
+                                if (sessionStore.isLocked()) {
+                                    val min = (sessionStore.lockRemainingMs() / 60000) + 1
+                                    error = "Too many attempts. Try again in $min min"
+                                    return@PillButton
+                                }
+                                loading = true
+                                error = null
+                                scope.launch {
+                                    try {
+                                        val res = ApiClient.api.login(
+                                            mapOf(
+                                                "username" to username.trim(),
+                                                "password" to password
+                                            )
+                                        )
+                                        sessionStore.saveSession(
+                                            res.token,
+                                            res.expiresAt,
+                                            Gson().toJson(res.user)
+                                        )
+                                        sessionStore.resetFailedAttempts()
+                                        onLoginSuccess()
+                                    } catch (e: Exception) {
+                                        val locked = sessionStore.recordFailedAttempt()
+                                        error = if (locked) {
+                                            "Wrong password 3 times. Locked for 5 minutes."
+                                        } else {
+                                            e.toUserMessage()
+                                        }
+                                    } finally {
+                                        loading = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (hasNfc) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Or hold your registered NFC card near the phone",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
                     Spacer(Modifier.height(20.dp))
-                    PillButton(
-                        text = "Login",
-                        loading = loading,
-                        onClick = {
-                            if (username.isBlank() || password.isBlank()) {
-                                error = "Fill all fields"
-                                return@PillButton
-                            }
-                            if (sessionStore.isLocked()) {
-                                val min = (sessionStore.lockRemainingMs() / 60000) + 1
-                                error = "Too many attempts. Try again in $min min"
-                                return@PillButton
-                            }
-                            loading = true
-                            error = null
-                            scope.launch {
-                                try {
-                                    val res = ApiClient.api.login(
-                                        mapOf(
-                                            "username" to username.trim(),
-                                            "password" to password
-                                        )
-                                    )
-                                    sessionStore.saveSession(
-                                        res.token,
-                                        res.expiresAt,
-                                        Gson().toJson(res.user)
-                                    )
-                                    sessionStore.resetFailedAttempts()
-                                    onLoginSuccess()
-                                } catch (e: Exception) {
-                                    val locked = sessionStore.recordFailedAttempt()
-                                    error = if (locked) {
-                                        "Wrong password 3 times. Locked for 5 minutes."
-                                    } else {
-                                        e.toUserMessage()
-                                    }
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                Spacer(Modifier.height(20.dp))
-                TextButton(onClick = onGoRegister) {
-                    Text("Don't have an account? Register")
+                    TextButton(onClick = onGoRegister) {
+                        Text("Don't have an account? Register")
+                    }
                 }
             }
         }
@@ -188,113 +252,125 @@ fun RegisterScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(Modifier.height(32.dp))
-            Text("Create Account", fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(24.dp))
-
-            GlassCard(radius = 24.dp, modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Username") },
-                    leadingIcon = { Icon(Icons.Default.Person, null) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email") },
-                    leadingIcon = { Icon(Icons.Default.Email, null) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Phone number") },
-                    leadingIcon = { Icon(Icons.Default.Phone, null) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    leadingIcon = { Icon(Icons.Default.Lock, null) },
-                    trailingIcon = {
-                        IconButton(onClick = { showPass = !showPass }) {
-                            Icon(
-                                if (showPass) Icons.Default.VisibilityOff
-                                else Icons.Default.Visibility,
-                                null
-                            )
-                        }
-                    },
-                    visualTransformation = if (showPass) VisualTransformation.None
-                    else PasswordVisualTransformation(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                error?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error)
-                }
-
-                Spacer(Modifier.height(20.dp))
-                PillButton(
-                    text = "Register",
-                    loading = loading,
-                    onClick = {
-                        if (listOf(username, email, phone, password).any { it.isBlank() }) {
-                            error = "Fill all fields"
-                            return@PillButton
-                        }
-                        loading = true
-                        error = null
-                        scope.launch {
-                            try {
-                                ApiClient.api.register(
-                                    mapOf(
-                                        "username" to username.trim(),
-                                        "email" to email.trim(),
-                                        "phone" to phone.trim(),
-                                        "password" to password
-                                    )
-                                )
-                                snackbarHostState.showSnackbar("Registered! Please login.")
-                                onRegistered()
-                            } catch (e: Exception) {
-                                error = e.toUserMessage()
-                            } finally {
-                                loading = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
+        if (loading) {
+            Box(
+                Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                ShieldLoadingAnimation(
+                    message = "Creating account…",
+                    subMessage = "Server may be waking up — please wait"
                 )
             }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(32.dp))
+                Text("Create Account", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(24.dp))
 
-            Spacer(Modifier.height(16.dp))
-            TextButton(onClick = onBack) { Text("Already have account? Login") }
+                GlassCard(radius = 24.dp, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text("Username") },
+                        leadingIcon = { Icon(Icons.Default.Person, null) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Email") },
+                        leadingIcon = { Icon(Icons.Default.Email, null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = { Text("Phone number") },
+                        leadingIcon = { Icon(Icons.Default.Phone, null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPass = !showPass }) {
+                                Icon(
+                                    if (showPass) Icons.Default.VisibilityOff
+                                    else Icons.Default.Visibility,
+                                    null
+                                )
+                            }
+                        },
+                        visualTransformation = if (showPass) VisualTransformation.None
+                        else PasswordVisualTransformation(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    error?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    PillButton(
+                        text = "Register",
+                        loading = false,
+                        onClick = {
+                            if (listOf(username, email, phone, password).any { it.isBlank() }) {
+                                error = "Fill all fields"
+                                return@PillButton
+                            }
+                            loading = true
+                            error = null
+                            scope.launch {
+                                try {
+                                    ApiClient.api.register(
+                                        mapOf(
+                                            "username" to username.trim(),
+                                            "email" to email.trim(),
+                                            "phone" to phone.trim(),
+                                            "password" to password
+                                        )
+                                    )
+                                    snackbarHostState.showSnackbar("Registered! Please login.")
+                                    onRegistered()
+                                } catch (e: Exception) {
+                                    error = e.toUserMessage()
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onBack) { Text("Already have account? Login") }
+            }
         }
     }
 }
@@ -338,7 +414,7 @@ fun SetMpinScreen(
                 Spacer(Modifier.height(16.dp))
                 Text("Set Device MPIN", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "This PIN stays only on this device",
+                    "This PIN stays only on this device. You can also register an NFC card in Settings.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(28.dp))

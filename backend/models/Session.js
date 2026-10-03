@@ -14,10 +14,10 @@ const sessionSchema = new mongoose.Schema(
       unique: true,
     },
     // Absolute expiry (5 days from last activity)
+    // TTL index is declared once below — do not also set index: true here
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
     deviceInfo: {
       type: String,
@@ -31,7 +31,7 @@ const sessionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-remove expired sessions
+// Auto-remove expired sessions (single TTL index)
 sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model('Session', sessionSchema);

@@ -1,7 +1,10 @@
 package com.shieldtap.vault
 
+import android.nfc.NfcAdapter
+import android.nfc.Tag
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
@@ -19,10 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.*
 import com.shieldtap.vault.data.ApiClient
 import com.shieldtap.vault.data.FolderDto
+import com.shieldtap.vault.data.NfcStore
 import com.shieldtap.vault.data.SessionStore
 import com.shieldtap.vault.ui.auth.LoginScreen
 import com.shieldtap.vault.ui.auth.RegisterScreen
 import com.shieldtap.vault.ui.auth.SetMpinScreen
+import com.shieldtap.vault.ui.components.ShieldLoadingAnimation
 import com.shieldtap.vault.ui.components.UnlockScreen
 import com.shieldtap.vault.ui.folder.FolderScreen
 import com.shieldtap.vault.ui.home.HomeScreen
@@ -32,18 +37,32 @@ import com.shieldtap.vault.ui.theme.ShieldTapTheme
 import kotlinx.coroutines.flow.first
 
 class MainActivity : ComponentActivity() {
+
+    private var nfcAdapter: NfcAdapter? = null
+    private lateinit var nfcStore: NfcStore
+
+    /** Latest NFC UID observed – Compose collects this */
+    private val nfcUidState = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val sessionStore = SessionStore(applicationContext)
+        nfcStore = NfcStore(applicationContext)
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+
         ApiClient.setTokenProvider {
             kotlinx.coroutines.runBlocking { sessionStore.getToken() }
         }
 
+        // Handle NFC tag if activity was started by a tag
+        intent?.let { tryReadTag(it) }
+
         setContent {
             var themeMode by remember { mutableStateOf("system") }
             var startRoute by remember { mutableStateOf<String?>(null) }
+            val nfcUid by nfcUidState
 
             LaunchedEffect(Unit) {
                 themeMode = sessionStore.themeFlow.first()
@@ -68,11 +87,17 @@ class MainActivity : ComponentActivity() {
             ShieldTapTheme(themeMode = themeMode) {
                 if (startRoute == null) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        ShieldLoadingAnimation(
+                            message = "Starting ShieldTap",
+                            subMessage = "Checking session…"
+                        )
                     }
                 } else {
                     AppNav(
                         sessionStore = sessionStore,
+                        nfcStore = nfcStore,
+                        nfcUidEvent = nfcUid,
+                        onNfcConsumed = { nfcUidState.value = null },
                         startDestination = startRoute!!,
                         themeMode = themeMode,
                         onThemeChange = { themeMode = it }
@@ -81,11 +106,53 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Reader mode – works while app is in foreground
+        nfcAdapter?.enableReaderMode(
+            this,
+            { tag: Tag ->
+                val uid = NfcStore.tagIdHex(tag)
+                runOnUiThread { nfcUidState.value = uid }
+            },
+            NfcAdapter.FLAG_READER_NFC_A or
+                NfcAdapter.FLAG_READER_NFC_B or
+                NfcAdapter.FLAG_READER_NFC_F or
+                NfcAdapter.FLAG_READER_NFC_V or
+                NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
+            null
+        )
+    }
+
+    override fun onPause() {
+        super.onPause()
+        nfcAdapter?.disableReaderMode(this)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        tryReadTag(intent)
+    }
+
+    private fun tryReadTag(intent: android.content.Intent) {
+        val tag: Tag? = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
+        }
+        tag?.let { nfcUidState.value = NfcStore.tagIdHex(it) }
+    }
 }
 
 @Composable
 fun AppNav(
     sessionStore: SessionStore,
+    nfcStore: NfcStore,
+    nfcUidEvent: String?,
+    onNfcConsumed: () -> Unit,
     startDestination: String,
     themeMode: String,
     onThemeChange: (String) -> Unit
@@ -99,9 +166,18 @@ fun AppNav(
         composable("login") {
             LoginScreen(
                 sessionStore = sessionStore,
+                nfcStore = nfcStore,
+                nfcUidEvent = nfcUidEvent,
+                onNfcConsumed = onNfcConsumed,
                 onLoginSuccess = {
                     navController.navigate("set_mpin") {
                         popUpTo("login") { inclusive = true }
+                    }
+                },
+                onQuickUnlock = {
+                    sessionStore.unlock()
+                    navController.navigate("main") {
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onGoRegister = { navController.navigate("register") }
@@ -144,6 +220,9 @@ fun AppNav(
         composable("unlock") {
             UnlockScreen(
                 sessionStore = sessionStore,
+                nfcStore = nfcStore,
+                nfcUidEvent = nfcUidEvent,
+                onNfcConsumed = onNfcConsumed,
                 onUnlocked = {
                     navController.navigate("main") {
                         popUpTo(0) { inclusive = true }
@@ -162,6 +241,9 @@ fun AppNav(
             } else {
                 MainScaffold(
                     sessionStore = sessionStore,
+                    nfcStore = nfcStore,
+                    nfcUidEvent = nfcUidEvent,
+                    onNfcConsumed = onNfcConsumed,
                     themeMode = themeMode,
                     onThemeChange = onThemeChange,
                     onLogout = {
@@ -195,16 +277,31 @@ fun AppNav(
                 if (current == null) {
                     LaunchedEffect(Unit) { navController.popBackStack() }
                 } else {
-                    FolderScreen(
-                        folder = current,
-                        onBack = {
+                    // System back goes up one folder level, then exits to main
+                    BackHandler {
+                        if (folderStack.size > 1) {
                             folderStack = folderStack.dropLast(1)
-                            if (folderStack.isEmpty()) navController.popBackStack()
-                        },
-                        onOpenSubFolder = { sub ->
-                            folderStack = folderStack + sub
+                        } else {
+                            folderStack = emptyList()
+                            navController.popBackStack()
                         }
-                    )
+                    }
+                    key(current._id) {
+                        FolderScreen(
+                            folder = current,
+                            onBack = {
+                                if (folderStack.size > 1) {
+                                    folderStack = folderStack.dropLast(1)
+                                } else {
+                                    folderStack = emptyList()
+                                    navController.popBackStack()
+                                }
+                            },
+                            onOpenSubFolder = { sub ->
+                                folderStack = folderStack + sub
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -212,6 +309,9 @@ fun AppNav(
         composable("settings") {
             SettingsScreen(
                 sessionStore = sessionStore,
+                nfcStore = nfcStore,
+                nfcUidEvent = nfcUidEvent,
+                onNfcConsumed = onNfcConsumed,
                 currentTheme = themeMode,
                 onThemeChange = onThemeChange,
                 onBack = { navController.popBackStack() }
@@ -223,6 +323,9 @@ fun AppNav(
 @Composable
 fun MainScaffold(
     sessionStore: SessionStore,
+    nfcStore: NfcStore,
+    nfcUidEvent: String?,
+    onNfcConsumed: () -> Unit,
     themeMode: String,
     onThemeChange: (String) -> Unit,
     onLogout: () -> Unit,
@@ -235,6 +338,9 @@ fun MainScaffold(
     if (showSettings) {
         SettingsScreen(
             sessionStore = sessionStore,
+            nfcStore = nfcStore,
+            nfcUidEvent = nfcUidEvent,
+            onNfcConsumed = onNfcConsumed,
             currentTheme = themeMode,
             onThemeChange = onThemeChange,
             onBack = { showSettings = false }
@@ -295,6 +401,9 @@ fun MainScaffold(
             when (selectedTab) {
                 0 -> HomeScreen(
                     sessionStore = sessionStore,
+                    nfcStore = nfcStore,
+                    nfcUidEvent = nfcUidEvent,
+                    onNfcConsumed = onNfcConsumed,
                     onOpenFolder = onOpenFolder,
                     onLockApp = onLockApp
                 )
